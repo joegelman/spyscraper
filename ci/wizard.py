@@ -1,14 +1,15 @@
+# ci/wizard.py
 from __future__ import annotations
 
 import os
 import re
+import subprocess
+import sys
 from pathlib import Path
 
-import ci.make_offering_docx_openai as offering_docx
 from ci.crawl import crawl_site
 from ci.evidence import build_evidence_packs
 from ci.make_scrape_xlsx import write_scrape_xlsx
-from ci.summarize_xlsx_openai import summarize_xlsx
 from ci.trim import build_snippets
 
 
@@ -82,13 +83,23 @@ def is_insecure_enabled() -> bool:
 
 
 def pick_network_mode() -> None:
+    """
+    Sets OPENAI_INSECURE=1 for this process only if user selects Basic.
+    """
     print("Network config:")
     print("(1) Basic (recommended for managed Macs)")
     print("(2) Expert")
     choice = input("Select [1]: ").strip() or "1"
-
     if choice == "1":
         os.environ["OPENAI_INSECURE"] = "1"
+
+
+def run_cmd(cmd: list[str]) -> None:
+    """
+    Run a subprocess with inherited env/stdout/stderr. Raise on failure.
+    """
+    print("\n$ " + " ".join(cmd))
+    subprocess.run(cmd, check=True, env=os.environ.copy())
 
 
 def main():
@@ -107,11 +118,7 @@ def main():
     # 3) Scrape size
     size_choice = pick_menu(
         "Scrape size:",
-        [
-            ("Small", "50 pages"),
-            ("Medium", "100 pages"),
-            ("Large", "300 pages"),
-        ],
+        [("Small", "50 pages"), ("Medium", "100 pages"), ("Large", "300 pages")],
         default_idx=1,
     )
     max_pages = {1: 50, 2: 100, 3: 300}[size_choice]
@@ -124,32 +131,21 @@ def main():
     # 4) Runtime settings
     run_choice = pick_menu(
         "Runtime settings:",
-        [
-            ("Use defaults", ""),
-            ("Customize first", ""),
-        ],
+        [("Use defaults", ""), ("Customize first", "")],
         default_idx=1,
     )
 
     if run_choice == 2:
         model_choice = pick_menu(
             "OpenAI model:",
-            [
-                ("Budget", "gpt-4o"),
-                ("Solid", "gpt-5-mini"),
-                ("Fancy", "gpt-5.2"),
-            ],
+            [("Budget", "gpt-4o"), ("Solid", "gpt-5-mini"), ("Fancy", "gpt-5.2")],
             default_idx=2,
         )
         model = {1: "gpt-4o", 2: "gpt-5-mini", 3: "gpt-5.2"}[model_choice]
 
         delay_choice = pick_menu(
             "Delays between requests:",
-            [
-                ("Fast", "0.3s"),
-                ("Normal", "0.6s"),
-                ("Slow", "1.2s"),
-            ],
+            [("Fast", "0.3s"), ("Normal", "0.6s"), ("Slow", "1.2s")],
             default_idx=2,
         )
         delay = {1: 0.3, 2: 0.6, 3: 1.2}[delay_choice]
@@ -164,6 +160,7 @@ def main():
 
     pick_network_mode()
 
+    # Summary + confirm
     print("\n--- Run plan ---")
     print(f"Vendor: {vendor}")
     print(f"Domain: {domain}")
@@ -177,6 +174,7 @@ def main():
         print("Aborted.")
         return
 
+    # Output dirs
     base = Path("data") / slugify(domain)
     crawl_dir = base / "crawl"
     scored_dir = base / "scored"
@@ -187,6 +185,7 @@ def main():
         d.mkdir(parents=True, exist_ok=True)
 
     start_url = f"https://www.{domain}/"
+    pages_jsonl = crawl_dir / "pages.jsonl"
 
     print("\n1) Crawling...")
     crawl_site(
@@ -196,8 +195,6 @@ def main():
         delay=delay,
         include_subdomains=True,
     )
-
-    pages_jsonl = crawl_dir / "pages.jsonl"
 
     print("\n2) Trimming/scoring...")
     build_snippets(
@@ -225,17 +222,37 @@ def main():
         include_all=True,
     )
 
-    print("\n5) Summarize XLSX via OpenAI...")
-    summarize_xlsx(str(xlsx_path), model=model)
+    print("\n5) Summarize XLSX via OpenAI (subprocess)...")
+    run_cmd(
+        [
+            sys.executable,
+            "ci/summarize_xlsx_openai.py",
+            "--xlsx",
+            str(xlsx_path),
+            "--model",
+            model,
+        ]
+    )
 
-    print("\n6) Generate Competitive Offering Map DOCX via OpenAI...")
+    print("\n6) Generate Competitive Offering Map DOCX via OpenAI (subprocess)...")
     docx_path = export_dir / "competitive_offering_map.docx"
-    offering_docx.make_docx(
-        vendor=vendor,
-        domain=domain,
-        xlsx_path=str(xlsx_path),
-        out_docx=str(docx_path),
-        model=model,
+    run_cmd(
+        [
+            sys.executable,
+            "ci/make_offering_docx_openai.py",
+            "--vendor",
+            vendor,
+            "--domain",
+            domain,
+            "--xlsx",
+            str(xlsx_path),
+            "--out",
+            str(docx_path),
+            "--model",
+            model,
+            "--max-rows",
+            "10",
+        ]
     )
 
     print("\nDONE.")
