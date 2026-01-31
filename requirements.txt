@@ -1,0 +1,8 @@
+httpx
+beautifulsoup4
+lxml
+trafilatura
+markdownify
+playwright
+openpyxl
+python-docx
