@@ -251,7 +251,7 @@ def main():
             "--model",
             model,
             "--max-rows",
-            "10",
+            "20",
         ]
     )
 
