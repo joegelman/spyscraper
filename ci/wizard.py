@@ -175,7 +175,7 @@ def main():
         return
 
     # Output dirs
-    base = Path("data") / slugify(domain)
+    base = Path("data") / vendor.lower().replace(" ", "_")
     crawl_dir = base / "crawl"
     scored_dir = base / "scored"
     evidence_dir = base / "evidence"
