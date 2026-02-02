@@ -211,7 +211,7 @@ def main():
     ap.add_argument("--xlsx", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--model", default="gpt-5-mini")
-    ap.add_argument("--max-rows", type=int, default=10)
+    ap.add_argument("--max-rows", type=int, default=20)
     args = ap.parse_args()
 
     wb = load_workbook(args.xlsx)
